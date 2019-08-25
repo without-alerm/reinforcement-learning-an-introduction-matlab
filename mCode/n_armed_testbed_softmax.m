@@ -1,7 +1,7 @@
-function [] = n_armed_testbed(nB,nA,nP,sigma)
-% nB台机器，每台机器nA个臂。摇动任意一台机器的任意一个臂的收益未知，且每台机器的臂的收益服从均方差为sigma，均值为0的正态分布
-%一共玩nP次。
-% Generates the 10-armed bandit testbed.
+function [] = n_armed_testbed_softmax(nB,nA,nP,sigma)
+% 
+% Generates the 10-armed bandit testbed with action selection using the 
+% softmax method and a Gibbs probability distribution with several temperatures.
 % 
 % Inputs: 
 %   nB: the number of bandits
@@ -42,20 +42,20 @@ randn('seed',0);
 % generate the TRUE reward Q^{\star}: 
 qStarMeans = mvnrnd( zeros(nB,nA), eye(nA) ); 
 
-% run an experiment for each epsilon:
-% 0 => fully greedy
-% 1 => explore on each trial
-epsArray = [ 0, 0.01, 0.1 ]; %, 1 ]; 
+% run an experiment for each temperature:
+% temp << 1 => fully greedy method
+% temp >> 1 => uniform selction fully exploritory
+temperatureArray = [ 0.01, 0.1, 1 ];
 
 % assume we have at least ONE draw from each "arm" (initialize with use the qStarMeans matrix):
 qT0 = mvnrnd( qStarMeans, eye(nA) );
 
-avgReward    = zeros(length(epsArray),nP); 
-perOptAction = zeros(length(epsArray),nP); 
-cumReward    = zeros(length(epsArray),nP); 
-cumProb      = zeros(length(epsArray),nP); 
-for ei=1:length(epsArray) %针对不同的贪心度进行运算。第48行规定了三个贪心度
-  tEps = epsArray(ei); 
+avgReward    = zeros(length(temperatureArray),nP); 
+perOptAction = zeros(length(temperatureArray),nP); 
+cumReward    = zeros(length(temperatureArray),nP); 
+cumProb      = zeros(length(temperatureArray),nP); 
+for ei=1:length(temperatureArray), 
+  Temp = temperatureArray(ei); 
 
   %qT = qT0;  % <- initialize to one draw per arm 
   qT = zeros(size(qT0));  % <- initialize to zero draws per arm (no knowledge)
@@ -66,11 +66,15 @@ for ei=1:length(epsArray) %针对不同的贪心度进行运算。第48行规定了三个贪心度
   pickedMaxAction = zeros(nB,nP); 
   for bi=1:nB, % pick a bandit
     for pi=1:nP, % make a play
-      % determine if this move is exploritory or greedy: 
-      if( rand(1) <= tEps ) % pick a RANDOM arm: 
-        [dum,arm] = histc(rand(1),linspace(0,1+eps,nA+1)); clear dum; 
-      else                  % pick the GREEDY arm:
-        [dum,arm] = max( qT(bi,:) ); clear dum; 
+      % determine the move to make based on past experience:
+      % 
+      qt        = qT(bi,:);                            % <- pick the current belief on the rewards to come from each action
+      smp       = exp(qt/Temp) ./ sum(exp(qt/Temp));    % <- compute the softmax probabilities (use Gibbs)
+      [dum,arm] = histc(rand(1),[0,cumsum(smp)]); clear dum; 
+      if( arm<1 || arm>nA )
+        arm
+        qt
+        smp
       end
       % determine if the arm selected is the best possible: 
       [dum,bestArm] = max( qStarMeans(bi,:) ); 
@@ -100,41 +104,42 @@ end
 % produce the average rewards plot: 
 % 
 figure; hold on; clrStr = 'brkc'; all_hnds = []; 
-for ei=1:length(epsArray),
+for ei=1:length(temperatureArray),
+  fprintf( 'working on temperature = %10.6f...\n', temperatureArray(ei) ); 
   %all_hnds(ei) = plot( [ 0, avgReward(ei,:) ], [clrStr(ei)] ); 
   all_hnds(ei) = plot( 1:nP, avgReward(ei,:), [clrStr(ei),'-'] ); 
 end 
-legend( all_hnds, { '0', '0.01', '0.1' }, 'Location', 'SouthEast' ); 
+legend( all_hnds, { '0.01:greedy', '0.1', '1:random' }, 'Location', 'SouthEast' ); 
 axis tight; grid on; 
 xlabel( 'plays' ); ylabel( 'Average Reward' ); 
 
 % produce the percent optimal action plot: 
 % 
 figure; hold on; clrStr = 'brkc'; all_hnds = []; 
-for ei=1:length(epsArray),
+for ei=1:length(temperatureArray),
   %all_hnds(ei) = plot( [ 0, avgReward(ei,:) ], [clrStr(ei)] ); 
   all_hnds(ei) = plot( 1:nP, perOptAction(ei,:), [clrStr(ei),'-'] ); 
 end 
-legend( all_hnds, { '0', '0.01', '0.1' }, 'Location', 'SouthEast' ); 
+legend( all_hnds, { '0.01:greedy', '0.1', '1:random' }, 'Location', 'SouthEast' ); 
 axis( [ 0, nP, 0, 1 ] ); axis tight; grid on; 
 xlabel( 'plays' ); ylabel( '% Optimal Action' );
 
 % produce the cummulative average rewards plot: 
 % 
 figure; hold on; clrStr = 'brkc'; all_hnds = []; 
-for ei=1:length(epsArray),
+for ei=1:length(temperatureArray),
   all_hnds(ei) = plot( 1:nP, cumReward(ei,:), [clrStr(ei),'-'] ); 
 end 
-legend( all_hnds, { '0', '0.01', '0.1' }, 'Location', 'SouthEast' ); 
+legend( all_hnds, { '0.01:greedy', '0.1', '1:random' }, 'Location', 'SouthEast' ); 
 axis tight; grid on; 
 xlabel( 'plays' ); ylabel( 'Cummulative Average Reward' ); 
 
 % produce the cummulative percent optimal action plot: 
 % 
 figure; hold on; clrStr = 'brkc'; all_hnds = []; 
-for ei=1:length(epsArray),
+for ei=1:length(temperatureArray),
   all_hnds(ei) = plot( 1:nP, cumProb(ei,:), [clrStr(ei),'-'] ); 
 end 
-legend( all_hnds, { '0', '0.01', '0.1' }, 'Location', 'SouthEast' ); 
+legend( all_hnds, { '0.01:greedy', '0.1', '1:random' }, 'Location', 'SouthEast' ); 
 axis( [ 0, nP, 0, 1 ] ); axis tight; grid on; 
 xlabel( 'plays' ); ylabel( 'Cummulative % Optimal Action' );

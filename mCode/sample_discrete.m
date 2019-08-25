@@ -1,4 +1,5 @@
 function M = sample_discrete(prob, r, c)
+%生成一个r行n列的矩阵，矩阵中数值取1或2，其概率分别为prob中的两个元素
 % SAMPLE_DISCRETE Like the built in 'rand', except we draw from a non-uniform discrete distrib.
 % M = sample_discrete(prob, r, c)
 %
